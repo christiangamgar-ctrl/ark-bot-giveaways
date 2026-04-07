@@ -6,6 +6,8 @@ from datetime import datetime
 from config import MYSTERY_BOX_PRIZES, MYSTERY_BOX_MANUAL_CHOICES, PAYPAL_LINK, KEY_PRICE_EUR, ADMIN_ROLE_NAME
 import database as db
 
+# Color azul oscuro para embeds
+BLUE_DARK = 0x1a2a4a
 
 def is_admin():
     async def predicate(interaction: discord.Interaction):
@@ -19,6 +21,11 @@ def is_admin():
         )
         return False
     return app_commands.check(predicate)
+
+
+def _is_admin_member(member: discord.Member) -> bool:
+    role = discord.utils.get(member.guild.roles, name=ADMIN_ROLE_NAME)
+    return (role and role in member.roles) or member.guild_permissions.administrator
 
 
 def roll_mystery_prize():
@@ -38,15 +45,12 @@ class ClaimKeyView(discord.ui.View):
 
     @discord.ui.button(label="🗝️ ¡Reclamar llave!", style=discord.ButtonStyle.success, custom_id="claim_key")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Verificar que el key giveaway sigue activo en DB
         kg = db.get_key_giveaway(self.giveaway_msg_id)
         if not kg:
             await interaction.response.send_message("❌ Esta llave ya fue reclamada.", ephemeral=True)
             return
 
-        # Desactivar en DB primero (evita race conditions)
         db.close_key_giveaway(self.giveaway_msg_id)
-
         db.add_keys(interaction.user.id, 1)
         total_keys = db.get_keys(interaction.user.id)
         claim_time = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -66,8 +70,10 @@ class ClaimKeyView(discord.ui.View):
         except Exception as e:
             print(f"Error editando: {e}")
 
+        # Mensaje público de que alguien reclamó la llave
         await interaction.response.send_message(
-            f"🎉 {interaction.user.mention} ¡Has conseguido la llave! Ahora tienes **{total_keys}** llave(s)."
+            f"🎉 {interaction.user.mention} ¡Has conseguido la llave! Ahora tienes **{total_keys}** llave(s).",
+            ephemeral=True
         )
 
         db.log_event("key_claimed", {
@@ -121,6 +127,8 @@ class OpenBoxView(discord.ui.View):
             f"¿Apruebas?"
         )
 
+        # Enviar mensaje de aprobación solo visible para admins (ephemeral no funciona con views, 
+        # así que lo mandamos al canal pero solo admins pueden interactuar)
         await interaction.channel.send(admin_msg_content, view=approve_view)
         await interaction.response.send_message(
             "⏳ Solicitud enviada. Un admin debe aprobarla.", ephemeral=True
@@ -134,16 +142,15 @@ class AdminApproveView(discord.ui.View):
         self.requester = requester
         self.box_channel = box_channel
 
-    async def _check_admin(self, interaction: discord.Interaction) -> bool:
-        role = discord.utils.get(interaction.guild.roles, name=ADMIN_ROLE_NAME)
-        return (role and role in interaction.user.roles) or interaction.user.guild_permissions.administrator
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Solo admins y dueño del server pueden interactuar con estos botones."""
+        if _is_admin_member(interaction.user):
+            return True
+        await interaction.response.send_message("❌ Solo admins pueden usar estos botones.", ephemeral=True)
+        return False
 
     @discord.ui.button(label="✅ Aprobar", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check_admin(interaction):
-            await interaction.response.send_message("❌ Solo admins pueden aprobar.", ephemeral=True)
-            return
-
         box = db.get_mystery_box(self.box_msg_id)
         if not box:
             await interaction.response.send_message("❌ La mystery box ya no existe.", ephemeral=True)
@@ -155,7 +162,7 @@ class AdminApproveView(discord.ui.View):
         db.remove_keys(self.requester.id, 1)
         db.close_mystery_box(self.box_msg_id)
 
-        # Editar mensaje original
+        # Editar mensaje original de la box
         try:
             msg = await self.box_channel.fetch_message(self.box_msg_id)
             embed = msg.embeds[0]
@@ -172,7 +179,7 @@ class AdminApproveView(discord.ui.View):
         except Exception as e:
             print(f"Error editando box: {e}")
 
-        # Enviar premio al usuario por DM
+        # Premio al usuario por DM (privado)
         try:
             await self.requester.send(
                 f"🎉 ¡Tu Mystery Box ha sido abierta!\n"
@@ -180,11 +187,10 @@ class AdminApproveView(discord.ui.View):
                 f"Contacta con un admin para reclamarlo."
             )
         except Exception:
-            await self.box_channel.send(
-                f"🎉 {self.requester.mention} tu mystery box fue abierta. Revisa tus DMs para ver tu premio.",
-                delete_after=15
-            )
+            # Si no se puede enviar DM, mensaje ephemeral en el canal
+            pass
 
+        # Mensaje público sin revelar premio
         await self.box_channel.send(
             f"📦 {self.requester.mention} ha abierto la Mystery Box. ¡Contacta con un admin para reclamar tu premio!"
         )
@@ -206,10 +212,6 @@ class AdminApproveView(discord.ui.View):
 
     @discord.ui.button(label="❌ Rechazar", style=discord.ButtonStyle.danger)
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check_admin(interaction):
-            await interaction.response.send_message("❌ Solo admins pueden rechazar.", ephemeral=True)
-            return
-
         db.clear_box_pending_user(self.box_msg_id)
 
         for child in self.children:
@@ -219,7 +221,8 @@ class AdminApproveView(discord.ui.View):
             view=self
         )
         await self.box_channel.send(
-            f"❌ {self.requester.mention} tu solicitud para abrir la mystery box fue rechazada."
+            f"❌ {self.requester.mention} tu solicitud para abrir la mystery box fue rechazada.",
+            delete_after=10
         )
 
 
@@ -240,10 +243,11 @@ class MysteryBoxCog(commands.Cog):
                 f"Realiza el pago y muestra el comprobante a un admin para recibir tu llave.\n\n"
                 f"🔗 **[Pagar con PayPal]({PAYPAL_LINK})**"
             ),
-            color=0xFFD700
+            color=BLUE_DARK
         )
         embed.set_footer(text="ArkStar Legacy · Mystery Box")
-        await interaction.response.send_message(embed=embed)
+        # ephemeral=True → solo lo ve quien usó el comando
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="mykeys", description="Ver cuántas llaves tienes")
     async def mykeys(self, interaction: discord.Interaction):
@@ -260,13 +264,13 @@ class MysteryBoxCog(commands.Cog):
         embed = discord.Embed(
             title="🗝️ LLAVE GRATIS",
             description="¡Un admin está regalando una llave de Mystery Box!\n**¡El primero que pulse el botón se la lleva!**",
-            color=0x00FF88
+            color=BLUE_DARK
         )
         embed.add_field(name="🕐 Iniciado el", value=start_time, inline=True)
         embed.add_field(name="👑 Regalado por", value=interaction.user.mention, inline=True)
         embed.set_footer(text="ArkStar Legacy · Mystery Box")
 
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         msg = await interaction.channel.send(embed=embed)
 
         db.create_key_giveaway(message_id=msg.id, host_id=interaction.user.id)
@@ -274,6 +278,7 @@ class MysteryBoxCog(commands.Cog):
         view = ClaimKeyView(giveaway_msg_id=msg.id)
         await msg.edit(view=view)
 
+        # Solo lo ve el admin que lo publicó
         await interaction.followup.send("✅ Llave gratis publicada.", ephemeral=True)
 
     @app_commands.command(name="mysterybox", description="[ADMIN] Crear una Mystery Box")
@@ -318,14 +323,14 @@ class MysteryBoxCog(commands.Cog):
                 "¿Tienes una llave? ¡Úsala para abrirla y descubrir tu premio!\n\n"
                 f"🗝️ Precio de llave: **€{KEY_PRICE_EUR}** · [Comprar aquí]({PAYPAL_LINK})"
             ),
-            color=0xFF6600
+            color=BLUE_DARK
         )
         embed.add_field(name="🏆 Premio", value="*Secreto — se revelará al abrirla*", inline=False)
         embed.add_field(name="🕐 Publicada el", value=start_time, inline=True)
         embed.add_field(name="👑 Creada por", value=interaction.user.mention, inline=True)
         embed.set_footer(text="ArkStar Legacy · Mystery Box")
 
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         msg = await interaction.channel.send(embed=embed)
 
         db.create_mystery_box(
@@ -341,6 +346,7 @@ class MysteryBoxCog(commands.Cog):
         view = OpenBoxView(box_msg_id=msg.id)
         await msg.edit(view=view)
 
+        # Solo lo ve el admin que creó la box
         await interaction.followup.send(
             f"✅ Mystery Box creada.\n"
             f"🏆 Premio secreto: **{prize}**\n"
