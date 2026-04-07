@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import random
 from datetime import datetime
-from config import MYSTERY_BOX_PRIZES, PAYPAL_LINK, KEY_PRICE_EUR, ADMIN_ROLE_NAME
+from config import MYSTERY_BOX_PRIZES, MYSTERY_BOX_MANUAL_CHOICES, PAYPAL_LINK, KEY_PRICE_EUR, ADMIN_ROLE_NAME
 import database as db
 
 
@@ -287,7 +287,7 @@ class MysteryBoxCog(commands.Cog):
             app_commands.Choice(name="👑 Manual (el admin elige)", value="admin"),
         ],
         premio_manual=[
-            app_commands.Choice(name=p[0], value=p[0]) for p in MYSTERY_BOX_PRIZES
+            app_commands.Choice(name=p, value=p) for p in MYSTERY_BOX_MANUAL_CHOICES
         ]
     )
     @is_admin()
