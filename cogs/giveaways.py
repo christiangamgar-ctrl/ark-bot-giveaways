@@ -28,7 +28,7 @@ class GiveawayEnterButton(discord.ui.View):
 
     @discord.ui.button(
         label="🎉 Enter",
-        style=discord.ButtonStyle.secondary,
+        style=discord.ButtonStyle.primary,
         custom_id="giveaway_enter"
     )
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -83,7 +83,7 @@ class GiveawayCog(commands.Cog):
         embed = discord.Embed(
             title="🎉 GIVEAWAY",
             description=f"**{descripcion}**",
-            color=0xFFD700
+            color=0x1a2a4a
         )
         embed.add_field(name="🏆 Premio", value="*Se revelará al finalizar*", inline=False)
         embed.add_field(name="👥 Participantes", value="0", inline=True)
@@ -92,7 +92,7 @@ class GiveawayCog(commands.Cog):
         embed.set_footer(text="Pulsa el botón para participar · ArkStar Legacy")
         embed.set_thumbnail(url="https://i.imgur.com/7V0GSEW.png")
 
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         msg = await interaction.channel.send(embed=embed)
 
         view = GiveawayEnterButton(giveaway_id=msg.id)
