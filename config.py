@@ -2,15 +2,9 @@
 #  CONFIGURACIÓN GENERAL DEL BOT
 # ─────────────────────────────────────────────
 
-# Tu link de PayPal para comprar llaves
 PAYPAL_LINK = "https://www.paypal.com/paypalme/ArkStarLegacy"
-
-# Precio de cada llave en euros
 KEY_PRICE_EUR = 10
-
-# ID del rol de admin (cámbialo por el tuyo)
-# Los miembros con este rol podrán usar comandos de admin
-ADMIN_ROLE_NAME = "Admin"  # O usa ADMIN_ROLE_ID = 123456789
+ADMIN_ROLE_NAME = "Admin"
 
 # ─────────────────────────────────────────────
 #  PREMIOS DE GIVEAWAY
@@ -29,8 +23,6 @@ GIVEAWAY_PRIZES = [
 # ─────────────────────────────────────────────
 #  CONTENIDO MYSTERY BOX (con probabilidades)
 # ─────────────────────────────────────────────
-# Cada entrada: ("nombre del premio", peso_probabilidad)
-# Mayor peso = más probable. Private Map tiene el menor peso.
 MYSTERY_BOX_PRIZES = [
     ("2 Dino Colors",           15),
     ("2 OC Blueprints",         15),
@@ -61,4 +53,33 @@ MYSTERY_BOX_PRIZES = [
     ("Private Map 12h",         2),
     ("Private Map 24h",         1),
     ("Private Map 48h",         1),
+]
+
+# Lista reducida para el selector manual (Discord permite máx 25 opciones)
+MYSTERY_BOX_MANUAL_CHOICES = [
+    "2 Dino Colors",
+    "2 OC Blueprints",
+    "Variety Pack 10",
+    "Variety Pack 20",
+    "Variety Pack 50",
+    "Breeding Pack 10",
+    "Breeding Pack 25",
+    "Breeding Pack 60",
+    "Ammo Pack 15",
+    "Ammo Pack 25",
+    "Ammo Pack 40",
+    "Ascension Pack 6",
+    "Ascension Pack 15",
+    "Ascension Pack 20",
+    "Blueprints Pack 10",
+    "Blueprints Pack 25",
+    "Blueprints Pack 60",
+    "Turret Pack 10",
+    "Turret Pack 25",
+    "Turret Pack 50",
+    "Base Pack 10",
+    "Base Pack 40",
+    "Base Pack 60",
+    "Private Map 12h",
+    "Private Map 48h",
 ]
