@@ -137,7 +137,6 @@ def get_giveaway_entry_count(giveaway_id: int) -> int:
         return row["cnt"]
 
 def remove_giveaway_entry(giveaway_id: int, user_id: int) -> bool:
-    """Elimina un participante del giveaway. Devuelve True si existía.""\"
     with get_conn() as conn:
         cursor = conn.execute(
             "DELETE FROM giveaway_entries WHERE giveaway_id = ? AND user_id = ?",
