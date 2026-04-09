@@ -6,6 +6,8 @@ from datetime import datetime
 from config import GIVEAWAY_PRIZES, ADMIN_ROLE_NAME
 import database as db
 
+BLUE_DARK = 0x1a2a4a
+
 
 def is_admin():
     async def predicate(interaction: discord.Interaction):
@@ -66,7 +68,7 @@ class GiveawayCog(commands.Cog):
     @app_commands.command(name="giveaway", description="[ADMIN] Iniciar un nuevo giveaway")
     @app_commands.describe(
         descripcion="Descripción del giveaway",
-        premio="Premio secreto (solo admins lo ven hasta finalizar)"
+        premio="Premio que verán todos los participantes"
     )
     @app_commands.choices(
         premio=[app_commands.Choice(name=p, value=p) for p in GIVEAWAY_PRIZES]
@@ -83,9 +85,10 @@ class GiveawayCog(commands.Cog):
         embed = discord.Embed(
             title="🎉 GIVEAWAY",
             description=f"**{descripcion}**",
-            color=0x1a2a4a
+            color=BLUE_DARK
         )
-        embed.add_field(name="🏆 Premio", value="*Se revelará al finalizar*", inline=False)
+        # Premio visible desde el inicio
+        embed.add_field(name="🏆 Premio", value=f"**{premio.value}**", inline=False)
         embed.add_field(name="👥 Participantes", value="0", inline=True)
         embed.add_field(name="🕐 Inicio", value=now, inline=True)
         embed.add_field(name="👑 Organizado por", value=interaction.user.mention, inline=True)
@@ -110,7 +113,7 @@ class GiveawayCog(commands.Cog):
 
         await interaction.followup.send(
             f"✅ Giveaway creado en {interaction.channel.mention}\n"
-            f"🔒 Premio secreto: **{premio.value}**\n"
+            f"🏆 Premio: **{premio.value}**\n"
             f"Usa `/endgiveaway {msg.id}` para finalizarlo.",
             ephemeral=True
         )
@@ -204,8 +207,87 @@ class GiveawayCog(commands.Cog):
                 f"Participantes: `{count}` | Host: <@{gw['host_id']}>"
             )
 
-        embed = discord.Embed(title="📋 Giveaways Activos", description="\n".join(lines), color=0xFFD700)
+        embed = discord.Embed(title="📋 Giveaways Activos", description="\n".join(lines), color=BLUE_DARK)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="giveawayparticipantes", description="[ADMIN] Ver participantes de un giveaway")
+    @app_commands.describe(message_id="ID del mensaje del giveaway")
+    @is_admin()
+    async def giveawayparticipantes(self, interaction: discord.Interaction, message_id: str):
+        gw_id = int(message_id)
+        gw = db.get_giveaway(gw_id)
+
+        if not gw:
+            await interaction.response.send_message("❌ No se encontró un giveaway activo con ese ID.", ephemeral=True)
+            return
+
+        entries = db.get_giveaway_entries(gw_id)
+        if not entries:
+            await interaction.response.send_message("📭 Este giveaway no tiene participantes todavía.", ephemeral=True)
+            return
+
+        # Construir lista de menciones
+        menciones = []
+        for uid in entries:
+            menciones.append(f"<@{uid}>")
+
+        # Dividir en páginas de 20 si hay muchos
+        chunk_size = 20
+        chunks = [menciones[i:i+chunk_size] for i in range(0, len(menciones), chunk_size)]
+
+        embed = discord.Embed(
+            title=f"👥 Participantes del Giveaway",
+            description=f"**Premio:** {gw['prize']}\n**Total:** {len(entries)} participante(s)\n\n" + " · ".join(chunks[0]),
+            color=BLUE_DARK
+        )
+        if len(chunks) > 1:
+            for chunk in chunks[1:]:
+                embed.add_field(name="\u200b", value=" · ".join(chunk), inline=False)
+
+        embed.set_footer(text=f"ID: {gw_id} · ArkStar Legacy")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="eliminargiveaway", description="[ADMIN] Eliminar un miembro de un giveaway")
+    @app_commands.describe(
+        message_id="ID del mensaje del giveaway",
+        usuario="Usuario a eliminar del giveaway"
+    )
+    @is_admin()
+    async def eliminargiveaway(self, interaction: discord.Interaction, message_id: str, usuario: discord.Member):
+        gw_id = int(message_id)
+        gw = db.get_giveaway(gw_id)
+
+        if not gw:
+            await interaction.response.send_message("❌ No se encontró un giveaway activo con ese ID.", ephemeral=True)
+            return
+
+        removed = db.remove_giveaway_entry(gw_id, usuario.id)
+        if not removed:
+            await interaction.response.send_message(
+                f"⚠️ {usuario.mention} no estaba inscrito en este giveaway.", ephemeral=True
+            )
+            return
+
+        total = db.get_giveaway_entry_count(gw_id)
+
+        # Actualizar el contador en el embed del mensaje
+        try:
+            channel = interaction.guild.get_channel(gw["channel_id"])
+            msg = await channel.fetch_message(gw_id)
+            embed = msg.embeds[0]
+            for i, field in enumerate(embed.fields):
+                if field.name == "👥 Participantes":
+                    embed.set_field_at(i, name="👥 Participantes", value=str(total), inline=True)
+                    break
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Error actualizando embed: {e}")
+
+        await interaction.response.send_message(
+            f"✅ {usuario.mention} ha sido eliminado del giveaway **{gw['prize']}**.\n"
+            f"Participantes restantes: **{total}**",
+            ephemeral=True
+        )
 
 
 async def setup(bot):
